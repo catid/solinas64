@@ -476,13 +476,9 @@ struct AppDataReader
 /**
     Random
 
-    Xoshiro256+ based pseudo-random number generator (PRNG) that can generate
-    random numbers between 1..p.  NextNonzeroFp() is mainly intended to be used
-    for producing convolutional code coefficients to multiply by the data.
+    Xoshiro256+ based pseudo-random number generator (PRNG) for 64-bit output.
 
     Call Seed() to provide a 64-bit generator seed.
-    Call NextNonzeroFp() to produce a random 61-bit number from 1..p
-    Call NextFp() to produce a random 61-bit number from 0..p
     Call Next() to produce a random 64-bit number.
 */
 struct Random
@@ -490,7 +486,7 @@ struct Random
     uint64_t State[4];
 
 
-    /// Seed the generator
+    /// Seed the generator.  (This is somewhat expensive.)
     void Seed(uint64_t x);
 
     /// Get the next 64-bit random number.
@@ -514,41 +510,6 @@ struct Random
         State[0] = s0, State[1] = s1, State[2] = s2, State[3] = s3;
 
         return result;
-    }
-
-    static SOLINAS64_FORCE_INLINE uint64_t ConvertRandToFp(uint64_t word)
-    {
-        // Pick high bits as recommended by Xoshiro authors
-        word >>= 3;
-
-        // If word + 1 overflows, then subtract 1.
-        // This converts fffff to ffffe and slightly biases the PRNG.
-        word -= (word + 1) >> 61;
-
-        return word;
-    }
-
-    static SOLINAS64_FORCE_INLINE uint64_t ConvertRandToNonzeroFp(uint64_t word)
-    {
-        word = ConvertRandToFp(word);
-
-        // If word - 1 borrows out, then add 1.
-        // This converts 0 to 1 and slightly biases the PRNG.
-        word += (word - 1) >> 63;
-
-        return word;
-    }
-
-    /// Get the next random value between 0..p
-    SOLINAS64_FORCE_INLINE uint64_t NextFp()
-    {
-        return ConvertRandToFp(Next());
-    }
-
-    /// Get the next random value between 1..p
-    SOLINAS64_FORCE_INLINE uint64_t NextNonzeroFp()
-    {
-        return ConvertRandToNonzeroFp(Next());
     }
 };
 
@@ -578,11 +539,19 @@ SOLINAS64_FORCE_INLINE uint64_t HashToNonzeroFp(uint64_t word)
 //------------------------------------------------------------------------------
 // Bulk Operations
 
-/// output[] = data[] * coeff
-/// Preconditions: 0 <= coeff < p.
-/// Preconditions: data != null, output != null, workspace != null, bytes > 0
-/// This expands the input data up to solinas64::GetMaxOutputBytes() bytes.
-/// Returns the number of bytes written.
+/**
+    MultiplyRegion()
+
+    output[] = data[] * coeff
+
+    Preconditions:
+        0 <= coeff < p.
+        data != null, output != null, workspace != null, bytes > 0
+
+    Note: This expands the input data up to solinas64::GetMaxOutputBytes() bytes.
+
+    Returns the number of bytes written.
+*/
 unsigned MultiplyRegion(
     const uint8_t* data,    ///< Input data
     unsigned bytes,         ///< Number of input data bytes
@@ -590,12 +559,19 @@ unsigned MultiplyRegion(
     uint8_t* workspace,     ///< Size calculated by solinas64::GetWorkspaceBytes()
     uint8_t* output);       ///< Size calculated by solinas64::GetMaxOutputBytes()
 
-/// output[] += data[] * coeff
-/// Preconditions: 0 <= coeff < p.
-/// Preconditions: data != null, output != null, workspace != null, bytes > 0
-/// Preconditions: Output has been padded with zeros in the high bytes.
-/// This expands the input data up to solinas64::GetMaxOutputBytes() bytes.
-/// Returns the number of bytes written.
+/**
+    MultiplyAddRegion()
+
+    output[] = output[] + data[] * coeff
+
+    Preconditions:
+        0 <= coeff < p.
+        data != null, output != null, workspace != null, bytes > 0
+
+    Note: This expands the input data up to solinas64::GetMaxOutputBytes() bytes.
+
+    Returns the number of bytes written.
+*/
 unsigned MultiplyAddRegion(
     const uint8_t* data,    ///< Input data
     unsigned bytes,         ///< Number of input data bytes
