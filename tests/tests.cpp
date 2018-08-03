@@ -26,6 +26,12 @@
     POSSIBILITY OF SUCH DAMAGE.
 */
 
+/*
+
+    TODO: Actually implement these.  Right now this does not build.
+
+*/
+
 #include "../solinas64.h"
 
 #include <iostream>
@@ -1160,7 +1166,7 @@ bool TestIntegration()
 
 int main()
 {
-    cout << "Unit tester for Fp61.  Exits with -1 on failure, 0 on success" << endl;
+    cout << "Unit tester for Solinas64.  Exits with -1 on failure, 0 on success" << endl;
     cout << endl;
 
     int result = SOLINAS64_RET_SUCCESS;

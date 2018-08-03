@@ -116,7 +116,7 @@ uint64_t GetTimeUsec()
 
 
 //------------------------------------------------------------------------------
-// Fp61 Erasure Code Encoder
+// Solinas64 Erasure Code Encoder
 
 /**
     Encode()
@@ -351,7 +351,7 @@ void RunBenchmarks()
 
 int main()
 {
-    cout << "Benchmarks for Fp61 erasure codes.  Before running the benchmarks please run the tests to make sure everything's working on your PC.  It's going to run quite a bit faster with 64-bit builds because it takes advantage of the speed of 64-bit multiplications." << endl;
+    cout << "Benchmarks for Solinas64 erasure codes.  Before running the benchmarks please run the tests to make sure everything's working on your PC.  It's going to run quite a bit faster with 64-bit builds because it takes advantage of the speed of 64-bit multiplications." << endl;
     cout << endl;
 
     gf256_init();
