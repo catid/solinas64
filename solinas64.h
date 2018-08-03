@@ -162,22 +162,19 @@ static const uint64_t kPrime = 0 - kPrimeSubC;
 //------------------------------------------------------------------------------
 // API
 
+// x += y, returns true on carry-out
 SOLINAS64_FORCE_INLINE bool adc(uint64_t& x, uint64_t y)
 {
-    if ((x += y) >= y) {
-        return false;
-    }
-    return true;
+    x += y;
+    return x < y;
 }
 
+// x -= y, returns true on borrow-out
 SOLINAS64_FORCE_INLINE bool sbb(uint64_t& x, uint64_t y)
 {
     const uint64_t x0 = x;
     x = x0 - y;
-    if (x0 >= y) {
-        return false;
-    }
-    return true;
+    return x0 < y;
 }
 
 /**
@@ -237,6 +234,7 @@ SOLINAS64_FORCE_INLINE uint64_t Multiply(uint64_t x, uint64_t y)
 
     uint64_t t = (static_cast<uint64_t>(a2) << 32) - a2;
 
+    // TODO: This seems to work in a stress test, but I need to actually prove it does not need more reductions.
     if (adc(p_lo, t)) {
         adc(p_lo, kPrimeSubC);
     }

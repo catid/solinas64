@@ -9,11 +9,11 @@ So it runs a lot faster when built into a 64-bit executable.
 
 I wrote this as a challenge to see if I could find a prime field that could run as fast as a Galois field.  This means I only needed to go far enough to implement a toy erasure code encoder.
 
-As an erasure code, Solinas64 will expand the input data byte by a number of bytes (as shown during benchmarking).
+As an erasure code, Solinas64 will expand the input data by a number of bytes (as shown during benchmarking).
 
 ## 64-bit Benchmarks
 
-This is comparing the gf256 library to solinas64 library for a software erasure code encoder application.
+This is comparing the gf256 library to solinas64 library for a software erasure code application.
 This is representative of the type of performance that can be achieved by using either library to implement a convolutional code.
 
 Main result: Solinas64 is only 2-5 times slower than gf256.
