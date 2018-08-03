@@ -1,5 +1,5 @@
 # Solinas64
-## Finite field arithmetic modulo the Solinas prime p = 2^61-2^32+1 in C++
+## Finite field arithmetic modulo the Solinas prime p = 2^64-2^32+1 in C++
 
 ### Disclaimer: This is research software and not ready for production use.
 
