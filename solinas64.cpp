@@ -28,6 +28,8 @@
 
 #include "solinas64.h"
 
+#include <string.h>
+
 namespace solinas64 {
 
 
@@ -90,119 +92,6 @@ uint64_t ReadBytes_LE(const uint8_t* data, unsigned bytes)
     return 0;
 }
 
-ReadResult ByteReader::Read(uint64_t& fpOut)
-{
-    uint64_t word, r, workspace = Workspace;
-    int nextAvailable, available = Available;
-
-    // If enough bits are already available:
-    if (available >= 61)
-    {
-        r = workspace & kPrime;
-        workspace >>= 61;
-        nextAvailable = available - 61;
-    }
-    else
-    {
-        unsigned bytes = Bytes;
-
-        // Read a word to fill in the difference
-        if (bytes >= 8)
-        {
-            word = ReadU64_LE(Data);
-            Data += 8;
-            Bytes = bytes - 8;
-            nextAvailable = available + 3;
-        }
-        else
-        {
-            if (bytes == 0 && available <= 0) {
-                return ReadResult::Empty;
-            }
-
-            word = ReadBytes_LE(Data, bytes);
-            Bytes = 0;
-
-            // Note this may go negative but we check for that above
-            nextAvailable = available + bytes * 8 - 61;
-        }
-
-        // This assumes workspace high bits (beyond `available`) are 0
-        r = (workspace | (word << available)) & kPrime;
-
-        // Remaining workspace bits are taken from read word
-        workspace = word >> (61 - available);
-    }
-
-    // If there is ambiguity in the representation:
-    if (IsU64Ambiguous(r))
-    {
-        // This will not overflow because available <= 60.
-        // We add up to 3 more bits, so adding one more keeps us within 64 bits.
-        ++nextAvailable;
-
-        // Insert bit 0 for 0ff..ff and 1 for 1ff..ff to resolve the ambiguity
-        workspace = (workspace << 1) | (r >> 60);
-
-        // Use kAmbiguity value for a placeholder
-        r = kAmbiguityMask;
-    }
-
-    Workspace = workspace;
-    Available = nextAvailable;
-
-    fpOut = r;
-    return ReadResult::Success;
-}
-
-uint64_t WordReader::Read()
-{
-    int nextAvailable, available = Available;
-    uint64_t r, workspace = Workspace;
-
-    if (available >= 61)
-    {
-        r = workspace & kPrime;
-        nextAvailable = available - 61;
-        workspace >>= 61;
-    }
-    else
-    {
-        uint64_t word;
-        unsigned bytes = Bytes;
-
-        // If we can read a full word:
-        if (bytes >= 8)
-        {
-            word = ReadU64_LE(Data);
-            Data += 8;
-            Bytes = bytes - 8;
-            nextAvailable = available + 3; // +64 - 61
-        }
-        else
-        {
-            if (bytes == 0 && available <= 0) {
-                return 0; // No data left to read
-            }
-
-            word = ReadBytes_LE(Data, bytes);
-
-            // Note this may go negative but we check for negative above
-            nextAvailable = available + bytes * 8 - 61;
-
-            Bytes = 0;
-        }
-
-        r = (workspace | (word << available)) & kPrime;
-        workspace = word >> (61 - available);
-    }
-
-    Workspace = workspace;
-    Available = nextAvailable;
-
-    return r;
-}
-
 
 //------------------------------------------------------------------------------
 // Memory Writing
@@ -251,6 +140,162 @@ void Random::Seed(uint64_t x)
     State[2] = h;
     h = HashU64(h);
     State[3] = h;
+}
+
+
+//------------------------------------------------------------------------------
+// Bulk Operations
+
+unsigned MultiplyRegion(
+    const uint8_t* data,
+    unsigned bytes,
+    uint64_t coeff,
+    uint8_t* workspace,
+    uint8_t* output)
+{
+    const unsigned minimumOutputBytes = (bytes + 7) & ~7u;
+
+    // Special fast cases
+    if (coeff <= 1)
+    {
+        if (coeff == 0) {
+            memset(output, 0, minimumOutputBytes);
+        }
+        else
+        {
+            memcpy(output, data, bytes);
+            memset(output + bytes, 0, minimumOutputBytes - bytes);
+        }
+        return minimumOutputBytes;
+    }
+
+    AppDataReader reader;
+    reader.SetupWorkspace(workspace);
+
+    while (bytes >= 32)
+    {
+        bytes -= 32;
+
+        uint64_t x0 = Multiply(coeff, reader.ReadNext8Bytes(data));
+        uint64_t x1 = Multiply(coeff, reader.ReadNext8Bytes(data + 8));
+        uint64_t x2 = Multiply(coeff, reader.ReadNext8Bytes(data + 16));
+        uint64_t x3 = Multiply(coeff, reader.ReadNext8Bytes(data + 24));
+
+        data += 32;
+
+        WriteU64_LE(output, x0);
+        WriteU64_LE(output + 8, x1);
+        WriteU64_LE(output + 16, x2);
+        WriteU64_LE(output + 24, x3);
+
+        output += 32;
+    }
+
+    while (bytes >= 8)
+    {
+        bytes -= 8;
+
+        uint64_t x0 = Multiply(coeff, reader.ReadNext8Bytes(data));
+        data += 8;
+
+        WriteU64_LE(output, x0);
+        output += 8;
+    }
+
+    if (bytes > 0)
+    {
+        uint64_t x0 = Multiply(coeff, reader.ReadFinalBytes(data, bytes));
+        WriteU64_LE(output, x0);
+        output += 8;
+    }
+
+    // Finalize the overflow bits
+    const unsigned extraWordBytes = reader.FlushAndGetWordCount() * 8;
+    const uint8_t* readPtr = reader.Data;
+
+    // Also work on the overflow bits
+    for (unsigned i = 0; i < extraWordBytes; i += 8)
+    {
+        WriteU64_LE(
+            output + i,
+            Multiply(
+                coeff,
+                ReadU64_LE(readPtr + i)));
+    }
+
+    return minimumOutputBytes + extraWordBytes;
+}
+
+unsigned MultiplyAddRegion(
+    const uint8_t* data,
+    unsigned bytes,
+    uint64_t coeff,
+    uint8_t* workspace,
+    uint8_t* output)
+{
+    const unsigned minimumOutputBytes = (bytes + 7) & ~7u;
+
+    // Special fast case
+    if (coeff == 0)
+    {
+        // TODO: Add a special case for coeff = 1
+        return minimumOutputBytes;
+    }
+
+    AppDataReader reader;
+    reader.SetupWorkspace(workspace);
+
+    /**** This loop takes over 95% of the execution time. ****/
+    while (bytes >= 32)
+    {
+        bytes -= 32;
+
+        WriteU64_LE(output, Add(Multiply(coeff, reader.ReadNext8Bytes(data)), ReadU64_LE(output)));
+        WriteU64_LE(output + 8, Add(Multiply(coeff, reader.ReadNext8Bytes(data + 8)), ReadU64_LE(output + 8)));
+        WriteU64_LE(output + 16, Add(Multiply(coeff, reader.ReadNext8Bytes(data + 16)), ReadU64_LE(output + 16)));
+        WriteU64_LE(output + 24, Add(Multiply(coeff, reader.ReadNext8Bytes(data + 24)), ReadU64_LE(output + 24)));
+
+        data += 32;
+        output += 32;
+    }
+
+    while (bytes >= 8)
+    {
+        bytes -= 8;
+
+        uint64_t x0 = Add(Multiply(coeff, reader.ReadNext8Bytes(data)), ReadU64_LE(output));
+        data += 8;
+
+        WriteU64_LE(output, x0);
+        output += 8;
+    }
+
+    if (bytes > 0)
+    {
+        uint64_t x0 = Add(Multiply(coeff, reader.ReadFinalBytes(data, bytes)), ReadU64_LE(output));
+
+        WriteU64_LE(output, x0);
+        output += 8;
+    }
+
+    // Finalize the overflow bits
+    const unsigned extraWordBytes = reader.FlushAndGetWordCount() * 8;
+    const uint8_t* readPtr = reader.Data;
+
+    // Also work on the overflow bits
+    for (unsigned i = 0; i < extraWordBytes; i += 8)
+    {
+        const uint64_t x = ReadU64_LE(output + i);
+        WriteU64_LE(
+            output + i,
+            Add(
+                Multiply(
+                    coeff,
+                    ReadU64_LE(readPtr + i)),
+                x));
+    }
+
+    return minimumOutputBytes + extraWordBytes;
 }
 
 

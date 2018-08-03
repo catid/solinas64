@@ -32,149 +32,10 @@
 #define SOLINAS64_ENABLE_GF256_COMPARE
 
 /**
-    Fp61 Benchmarks
+    Solinas64 Benchmarks
 
-    The goal of the benchmarks is to determine how fast Fp61 arithmetic is
-    for the purpose of implementing erasure codes in software.
-
-
-    *Drumroll...* Results:
-
-    The results are not good at all.  The Fp61 encoder is roughly 20x slower
-    than my Galois field code (gf256).  So, I do not recommend using Fp61.
-
-    The majority of the slowdown comes from the ByteReader class that needs
-    to convert byte data into 61-bit Fp words.  So it seems that having an
-    odd field size to achieve lazy reductions does not help performance.
-
-    *Sad trombone...*
-
-    Benchmarks for Fp61 erasure codes.  Before running the benchmarks please run the tests to make sure everything's working on your PC.  It's going to run quite a bit faster with 64-bit builds because it takes advantage of the speed of 64-bit multiplications.
-
-    Testing file size = 10 bytes
-    N = 2 :  gf256_MBPS=250 Fp61_MBPS=65 Fp61_OutputBytes=16
-    N = 4 :  gf256_MBPS=305 Fp61_MBPS=116 Fp61_OutputBytes=16
-    N = 8 :  gf256_MBPS=138 Fp61_MBPS=80 Fp61_OutputBytes=16
-    N = 16 :  gf256_MBPS=337 Fp61_MBPS=110 Fp61_OutputBytes=16
-    N = 32 :  gf256_MBPS=711 Fp61_MBPS=242 Fp61_OutputBytes=16
-    N = 64 :  gf256_MBPS=665 Fp61_MBPS=226 Fp61_OutputBytes=16
-    N = 128 :  gf256_MBPS=868 Fp61_MBPS=297 Fp61_OutputBytes=16
-    N = 256 :  gf256_MBPS=713 Fp61_MBPS=240 Fp61_OutputBytes=16
-    N = 512 :  gf256_MBPS=881 Fp61_MBPS=300 Fp61_OutputBytes=16
-    Testing file size = 100 bytes
-    N = 2 :  gf256_MBPS=1234 Fp61_MBPS=214 Fp61_OutputBytes=107
-    N = 4 :  gf256_MBPS=4000 Fp61_MBPS=486 Fp61_OutputBytes=107
-    N = 8 :  gf256_MBPS=2631 Fp61_MBPS=328 Fp61_OutputBytes=107
-    N = 16 :  gf256_MBPS=2051 Fp61_MBPS=300 Fp61_OutputBytes=107
-    N = 32 :  gf256_MBPS=3850 Fp61_MBPS=433 Fp61_OutputBytes=107
-    N = 64 :  gf256_MBPS=3972 Fp61_MBPS=428 Fp61_OutputBytes=107
-    N = 128 :  gf256_MBPS=4397 Fp61_MBPS=444 Fp61_OutputBytes=107
-    N = 256 :  gf256_MBPS=5137 Fp61_MBPS=500 Fp61_OutputBytes=107
-    N = 512 :  gf256_MBPS=5129 Fp61_MBPS=492 Fp61_OutputBytes=107
-    Testing file size = 1000 bytes
-    N = 2 :  gf256_MBPS=10309 Fp61_MBPS=889 Fp61_OutputBytes=1007
-    N = 4 :  gf256_MBPS=15325 Fp61_MBPS=848 Fp61_OutputBytes=1007
-    N = 8 :  gf256_MBPS=9184 Fp61_MBPS=486 Fp61_OutputBytes=1007
-    N = 16 :  gf256_MBPS=12728 Fp61_MBPS=722 Fp61_OutputBytes=1007
-    N = 32 :  gf256_MBPS=11838 Fp61_MBPS=610 Fp61_OutputBytes=1007
-    N = 64 :  gf256_MBPS=10555 Fp61_MBPS=604 Fp61_OutputBytes=1007
-    N = 128 :  gf256_MBPS=11354 Fp61_MBPS=614 Fp61_OutputBytes=1007
-    N = 256 :  gf256_MBPS=14782 Fp61_MBPS=816 Fp61_OutputBytes=1007
-    N = 512 :  gf256_MBPS=18430 Fp61_MBPS=940 Fp61_OutputBytes=1007
-    Testing file size = 10000 bytes
-    N = 2 :  gf256_MBPS=19138 Fp61_MBPS=893 Fp61_OutputBytes=10004
-    N = 4 :  gf256_MBPS=20283 Fp61_MBPS=959 Fp61_OutputBytes=10004
-    N = 8 :  gf256_MBPS=20953 Fp61_MBPS=1010 Fp61_OutputBytes=10004
-    N = 16 :  gf256_MBPS=22893 Fp61_MBPS=1056 Fp61_OutputBytes=10004
-    N = 32 :  gf256_MBPS=24461 Fp61_MBPS=1087 Fp61_OutputBytes=10004
-    N = 64 :  gf256_MBPS=22945 Fp61_MBPS=1057 Fp61_OutputBytes=10004
-    N = 128 :  gf256_MBPS=16939 Fp61_MBPS=982 Fp61_OutputBytes=10004
-    N = 256 :  gf256_MBPS=18608 Fp61_MBPS=927 Fp61_OutputBytes=10004
-    N = 512 :  gf256_MBPS=16662 Fp61_MBPS=734 Fp61_OutputBytes=10004
-    Testing file size = 100000 bytes
-    N = 2 :  gf256_MBPS=22941 Fp61_MBPS=962 Fp61_OutputBytes=100002
-    N = 4 :  gf256_MBPS=22827 Fp61_MBPS=976 Fp61_OutputBytes=100002
-    N = 8 :  gf256_MBPS=16210 Fp61_MBPS=1052 Fp61_OutputBytes=100002
-    N = 16 :  gf256_MBPS=17354 Fp61_MBPS=1044 Fp61_OutputBytes=100002
-    N = 32 :  gf256_MBPS=16976 Fp61_MBPS=1030 Fp61_OutputBytes=100002
-    N = 64 :  gf256_MBPS=13570 Fp61_MBPS=910 Fp61_OutputBytes=100002
-    N = 128 :  gf256_MBPS=10592 Fp61_MBPS=533 Fp61_OutputBytes=100002
-    N = 256 :  gf256_MBPS=10637 Fp61_MBPS=500 Fp61_OutputBytes=100002
-    N = 512 :  gf256_MBPS=11528 Fp61_MBPS=483 Fp61_OutputBytes=100002
-
-
-    Erasure codes are usually based on 8-bit Galois fields, but I was
-    intrigued by the speed of the 64-bit multiplier on modern Intel processors.
-    To take advantage of the fast multiplier I first looked at a number of field
-    options before settling on Fp=2^61-1.  Note that I haven't benchmarked
-    these other options so my comments might be misleading or incorrect.
-
-    Some other options I investigated:
-
-    Fp=2^64+c
-    - The values of `c` that I found had a high Hamming weight so would be
-      expensive to reduce using the pseudo-Mersenne reduction approach.
-    - These seem to be patented.  Didn't really look into that issue.
-    - Fp values do not fit into 64-bit words so they're slower to work with.
-    - The reduction seems to require 128-bit adds/subs to implement properly,
-      which are awkward to implement on some compilers.
-    - There's no room for lazy reductions, so adds/subs are more expensive.
-
-    Fp=2^64-c, specifically Solinas prime Fp=2^64-2^8-1
-    - The smallest values of `c` that I found had a high Hamming weight so would
-      be expensive to reduce using the pseudo-Mersenne reduction approach.
-    - The reduction seems to require 128-bit adds/subs to implement properly,
-      which are awkward to implement on some compilers.
-    - There's no room for lazy reductions, so adds/subs are more expensive.
-    ? Packing might be a littler simpler since all data is word-sized ?
-
-    Reduction approaches considered:
-
-    Montgomery:
-    This requires that the Montgomery u factor has a low Hamming weight to
-    implement efficiently.  p=2^64-2^32+1 happens to have this by chance,
-    but it's a rare property.  It then requires two 128-bit products and adds.
-
-    Pseudo-Mersenne:
-    This does not require an efficient u factor, but still requires similarly
-    two 128-bit products and adds.
-
-    Mersenne:
-    This is what Fp61 uses.  The reduction has to be applied multiple times to
-    fully flush data back into the field < p, and it restricts the sizes of the
-    inputs to 62 bits.  But in trade, no 128-bit operations are needed.
-*/
-
-/**
-    Fp=2^64-2^32+1 Solinas prime reduction (work in progress)
-    + Seems to have practically a simpler 128-bit product reduction.
-    + Will run 5% faster because it has about 5% fewer words to multiply.
-    ? Packing might be a littler simpler since all data is word-sized?
-    - There's no room for lazy reductions, so adds/subs are more expensive.
-
-    [1] Reduction as in "Generalized Mersenne Numbers" J. Solinas (NSA).
-    [2] Prime from "Solinas primes of small weight for fixed sizes" J. Angel.
-
-    For 128-bit product split into 4 32-bit words:
-    a3 a2 a1 a0 (mod 2^64 - 2^32 + 1)
-
-    =     a1 a0
-    -     a3 a2
-    +  a3 a2
-
-    =     a1 a0
-    -     a3 a2
-    +  0  a2    (Eliminate again)
-    -        a3
-    +     a3
-
-    =     a1 a0
-    +    +a2-a2 (Cannot subtract borrow out. But may add-overflow)
-    -        a3 (Can subtract borrow out)
-
-    This seems overall better than Fp61.
-
-    TODO: Can we avoid handling carries in some of these reduction steps?
+    The goal of the benchmarks is to determine how fast Solinas prime field
+    arithmetic is for the purpose of implementing erasure codes in software.
 */
 
 #include <iostream>
@@ -257,14 +118,6 @@ uint64_t GetTimeUsec()
 //------------------------------------------------------------------------------
 // Fp61 Erasure Code Encoder
 
-// Get maximum number of bytes needed for a recovery packet
-static unsigned GetRecoveryBytes(unsigned originalBytes)
-{
-    const unsigned maxWords = solinas64::ByteReader::MaxWords(originalBytes);
-    const unsigned maxBytes = solinas64::WordWriter::BytesNeeded(maxWords);
-    return maxBytes;
-}
-
 /**
     Encode()
 
@@ -281,92 +134,43 @@ unsigned Encode(
     unsigned N,
     unsigned bytes,
     uint64_t seed,
-    uint8_t* recovery)
+    uint8_t* workspace,
+    uint8_t* recovery,
+    unsigned maxRecoveryBytes)
 {
+    // Set up row seed
     uint64_t seedMix = solinas64::HashU64(seed);
 
-    std::vector<solinas64::ByteReader> readers;
-    readers.resize(N);
-    for (unsigned i = 0; i < N; ++i) {
-        readers[i].BeginRead(&originals[i][0], bytes);
-    }
+    // Unroll first column
+    uint64_t coeff0 = solinas64::HashToNonzeroFp(seedMix + 0);
+    unsigned recoveryBytes = solinas64::MultiplyRegion(
+        &originals[0][0],
+        bytes,
+        coeff0,
+        workspace,
+        recovery);
 
-    solinas64::WordWriter writer;
-    writer.BeginWrite(recovery);
+    // Pad with zeros in case others overflow more
+    memset(recovery + recoveryBytes, 0, maxRecoveryBytes - recoveryBytes);
 
-    const unsigned minWords = solinas64::WordReader::WordCount(bytes);
-    for (unsigned i = 0; i < minWords; ++i)
+    // For each remaining column:
+    for (unsigned i = 1; i < N; ++i)
     {
-        uint64_t fpword;
-        readers[0].Read(fpword);
-        uint64_t coeff = solinas64::HashToNonzeroFp(seedMix + 0);
-        uint64_t sum = solinas64::Multiply(coeff, fpword);
+        uint64_t coeff_i = solinas64::HashToNonzeroFp(seedMix + i);
 
-        unsigned column = 1;
-        unsigned columnsRemaining = N - 1;
-        while (columnsRemaining >= 3)
-        {
-            uint64_t coeff0 = solinas64::HashToNonzeroFp(seedMix + column);
-            uint64_t coeff1 = solinas64::HashToNonzeroFp(seedMix + column + 1);
-            uint64_t coeff2 = solinas64::HashToNonzeroFp(seedMix + column + 2);
+        unsigned written = solinas64::MultiplyAddRegion(
+            &originals[i][0],
+            bytes,
+            coeff_i,
+            workspace,
+            recovery);
 
-            uint64_t fpword0, fpword1, fpword2;
-            readers[column].Read(fpword0);
-            readers[column + 1].Read(fpword1);
-            readers[column + 2].Read(fpword2);
-
-            sum += solinas64::Multiply(coeff0, fpword0);
-            sum += solinas64::Multiply(coeff1, fpword1);
-            sum += solinas64::Multiply(coeff2, fpword2);
-            sum = solinas64::PartialReduce(sum);
-
-            column += 3;
-            columnsRemaining -= 3;
+        if (recoveryBytes < written) {
+            recoveryBytes = written;
         }
-
-        while (columnsRemaining > 0)
-        {
-            uint64_t temp;
-            readers[column].Read(temp);
-            sum += solinas64::Multiply(coeff, temp);
-
-            column++;
-            columnsRemaining--;
-        }
-        sum = solinas64::PartialReduce(sum);
-        sum = solinas64::Finalize(sum);
-        writer.Write(sum);
     }
 
-    for (;;)
-    {
-        bool more_data = false;
-
-        uint64_t sum = 0;
-
-        for (unsigned i = 0; i < N; ++i)
-        {
-            uint64_t coeff = solinas64::HashToNonzeroFp(seedMix + i);
-
-            uint64_t fpword;
-            if (readers[i].Read(fpword) == solinas64::ReadResult::Success)
-            {
-                more_data = true;
-
-                sum += solinas64::Multiply(coeff, fpword);
-                sum = solinas64::PartialReduce(sum);
-            }
-        }
-
-        if (!more_data) {
-            break;
-        }
-
-        sum = solinas64::Finalize(sum);
-        writer.Write(sum);
-    }
-
-    return writer.Flush();
+    return recoveryBytes;
 }
 
 void EncodeGF256(
@@ -419,6 +223,7 @@ void RunBenchmarks()
 
     std::vector<std::vector<uint8_t>> original_data;
     std::vector<uint8_t> recovery_data;
+    std::vector<uint8_t> workspace_data;
 
     for (unsigned i = 0; i < kFileSizesCount; ++i)
     {
@@ -494,13 +299,22 @@ void RunBenchmarks()
                     }
                 }
 
-                const unsigned maxRecoveryBytes = GetRecoveryBytes(fileSizeBytes);
+                const unsigned maxRecoveryBytes = solinas64::AppDataReader::GetMaxOutputBytes(fileSizeBytes);
+                const unsigned workspaceBytes = solinas64::AppDataReader::GetWorkspaceBytes(fileSizeBytes);
                 recovery_data.resize(maxRecoveryBytes);
+                workspace_data.resize(workspaceBytes);
 
                 {
                     uint64_t t0 = GetTimeUsec();
 
-                    unsigned recoveryBytes = Encode(original_data, N, fileSizeBytes, k, &recovery_data[0]);
+                    unsigned recoveryBytes = Encode(
+                        original_data,
+                        N,
+                        fileSizeBytes,
+                        k,
+                        &workspace_data[0],
+                        &recovery_data[0],
+                        maxRecoveryBytes);
 
                     uint64_t t1 = GetTimeUsec();
 
@@ -524,8 +338,8 @@ void RunBenchmarks()
 #ifdef SOLINAS64_ENABLE_GF256_COMPARE
             cout << " gf256_MBPS=" << (uint64_t)fileSizeBytes * N * kTrials / timeSum_gf256;
 #endif // SOLINAS64_ENABLE_GF256_COMPARE
-            cout << " Fp61_MBPS=" << (uint64_t)fileSizeBytes * N * kTrials / timeSum;
-            cout << " Fp61_OutputBytes=" << sizeSum / (float)kTrials;
+            cout << " Solinas64_MBPS=" << (uint64_t)fileSizeBytes * N * kTrials / timeSum;
+            cout << " Solinas64_OutputBytes=" << sizeSum / (float)kTrials;
             cout << endl;
         }
     }

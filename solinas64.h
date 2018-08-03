@@ -254,7 +254,8 @@ SOLINAS64_FORCE_INLINE uint64_t Multiply(uint64_t x, uint64_t y)
 
     This operation is not constant-time.
     A constant-time version can be implemented using Euler's totient method and
-    a straight line similar to https://github.com/catid/snowshoe/blob/master/src/fp.inc#L545
+    a straight line similar to
+    https://github.com/catid/snowshoe/blob/master/src/fp.inc#L545
 
     Returns the multiplicative inverse of x modulo p.
     0 < result < p
@@ -295,112 +296,17 @@ SOLINAS64_FORCE_INLINE uint32_t ReadU32_LE(const uint8_t* data)
 /// Returns 0 for any other value for `bytes`
 uint64_t ReadBytes_LE(const uint8_t* data, unsigned bytes);
 
-/// Values larger than this cannot be represented in the field
-static const uint64_t kAmbiguityMax = 0xffffffff00000000ULL;
+/// Values with all these bits set are ambiguous and need an extra bit to disambiguate the high bit.
+static const uint64_t kAmbiguityMask = 0x7fffffff00000000ULL;
 
-/// Returns true if the word provided needs an extra bit to represent it
-SOLINAS64_FORCE_INLINE bool IsAmbiguous(uint64_t u64_word)
+/// Returns true if the word provided needs an extra bit to represent it.
+SOLINAS64_FORCE_INLINE bool IsU64Ambiguous(uint64_t u64_word)
 {
-    return u64_word > kAmbiguityMax;
+    return (u64_word & kAmbiguityMask) == kAmbiguityMask;
 }
 
-/**
-    ByteReader
-
-    Reads 8 bytes at a time from the input data and outputs 61-bit Fp words.
-    Pads the final < 8 bytes with zeros.
-
-    See the comments on Fitting Bytes Into Words for how this works.
-
-    Call ByteReader::MaxWords() to calculate the maximum number of words that
-    can be generated for worst-case input of all FFF...FFs.
-
-    Define SOLINAS64_SAFE_MEMORY_ACCESSES if the platform does not support unaligned
-    reads and the input data is unaligned, or the platform is big-endian.
-
-    Call BeginRead() to begin reading.
-
-    Call ReadNext() repeatedly to read all words from the data.
-    It will return ReadResult::Empty when all bits are empty.
-*/
-struct ByteReader
-{
-    const uint8_t* Data;
-    unsigned Bytes;
-    uint64_t Workspace;
-    int Available;
-
-
-    /// Calculates and returns the maximum number of Fp field words that may be
-    /// produced by the ByteReader.
-    static SOLINAS64_FORCE_INLINE unsigned MaxWords(unsigned bytes)
-    {
-        unsigned bits = bytes * 8;
-
-        // Round up to the nearest word.
-        // All words may be expanded by one bit, hence the (bits/61) factor.
-        return (bits + (bits / 61) + 60) / 61;
-    }
-
-    /// Begin reading data
-    SOLINAS64_FORCE_INLINE void BeginRead(const uint8_t* data, unsigned bytes)
-    {
-        Data = data;
-        Bytes = bytes;
-        Workspace = 0;
-        Available = 0;
-    }
-
-    /// Returns ReadResult::Empty when no more data is available.
-    /// Otherwise fpOut will be a value between 0 and p-1.
-    ReadResult Read(uint64_t& fpOut);
-};
-
-/**
-    WordReader
-
-    Reads a series of 61-bit finalized Fp field elements from a byte array.
-
-    This differs from ByteReader in two ways:
-    (1) It does not have to handle the special case of all ffffs.
-    (2) It terminates deterministically at WordCount() words rather than
-    based on the contents of the data.
-
-    Call WordCount() to calculate the number of words to expect to read from
-    a given number of bytes.
-
-    Call BeginRead() to start reading.
-    Call Read() to retrieve each consecutive word.
-*/
-struct WordReader
-{
-    const uint8_t* Data;
-    unsigned Bytes;
-    uint64_t Workspace;
-    unsigned Available;
-
-
-    /// Calculate the number of words that can be read from a number of bytes
-    static SOLINAS64_FORCE_INLINE unsigned WordCount(unsigned bytes)
-    {
-        // Note that only whole (not partial) words can be read, so this rounds down
-        return (bytes * 8) / 61;
-    }
-
-    /// Begin writing to the given memory location
-    SOLINAS64_FORCE_INLINE void BeginRead(const uint8_t* data, unsigned bytes)
-    {
-        Data = data;
-        Bytes = bytes;
-        Workspace = 0;
-        Available = 0;
-    }
-
-    /// Read the next word.
-    /// It is up to the application to know when to stop reading,
-    /// based on the WordCount() count of words to read.
-    uint64_t Read();
-};
+/// Mask to clear the high bit
+static const uint64_t kHighBitMask = 0x7fffffffffffffffULL;
 
 
 //------------------------------------------------------------------------------
@@ -441,167 +347,123 @@ SOLINAS64_FORCE_INLINE void WriteU64_LE(uint8_t* data, uint64_t value)
 /// Write between 0..8 bytes in little-endian byte order
 void WriteBytes_LE(uint8_t* data, unsigned bytes, uint64_t value);
 
+
+//------------------------------------------------------------------------------
+// Reading Data
+
 /**
-    WordWriter
+    AppDataReader
 
-    Writes a series of 61-bit finalized Fp field elements to a byte array.
-    The resulting data can be read by WordReader.
-
-    Call BytesNeeded() to calculate the number of bytes needed to store the
-    given number of Fp words.
-
-    Call BeginWrite() to start writing.
-    Call Write() to write the next word.
-
-    Call Flush() to write the last few bytes.
-    Flush() returns the number of overall written bytes.
+    This is used to read byte data into 64-bit field words.
+    The complication is that 64-bit words >= p are not in the field, so to pack
+    them in efficiently ReadNext8Bytes() emits an extra bit when the top half of
+    the word is all ones (except the high bit).  The extra bits must be
+    processed as additional data once all the original data is processed.
 */
-struct WordWriter
+struct AppDataReader
 {
     uint8_t* Data;
     uint8_t* DataWritePtr;
     uint64_t Workspace;
-    unsigned Available;
+    int Available;
 
 
-    /// Calculate the number of bytes that will be written
-    /// for the given number of Fp words.
-    static SOLINAS64_FORCE_INLINE unsigned BytesNeeded(unsigned words)
+    /// Returns the number of extra temporary workspace bytes needed.
+    static SOLINAS64_FORCE_INLINE unsigned GetWorkspaceBytes(unsigned bytes)
     {
-        // 61 bits per word
-        const unsigned bits = words * 61;
+        const unsigned inputBits = bytes * 8;
 
-        // Round up to the next byte
-        return (bits + 7) / 8;
+        // All words may be expanded by one bit, hence the (bits / 64) factor,
+        // but only full words can be too large, so we round down.
+        const unsigned maxExtraBits = inputBits / 64;
+
+        // Round up to the number of words needed.
+        const unsigned words = (maxExtraBits + 63) / 64;
+
+        // Return the number of bytes needed in the Data pointer.
+        return words * 8;
     }
 
-    /// Begin writing to the given memory location.
-    /// It is up to the application to provide enough space in the buffer by
-    /// using BytesNeeded() to calculate the buffer size.
-    SOLINAS64_FORCE_INLINE void BeginWrite(uint8_t* data)
+    /// Returns the number of bytes overall that will be produced.
+    /// This includes the original data converted to words plus the extra words
+    /// that are generated by this class to handle input overflows.
+    static SOLINAS64_FORCE_INLINE unsigned GetMaxOutputBytes(unsigned bytes)
     {
-        Data = data;
-        DataWritePtr = data;
+        const unsigned originalWords = (bytes + 7) / 8;
+        return GetWorkspaceBytes(bytes) + originalWords * 8;
+    }
+
+    /// Provide the workspace data buffer of size GetWorkspaceBytes().
+    SOLINAS64_FORCE_INLINE void SetupWorkspace(uint8_t* workspace)
+    {
+        Data = workspace;
+        DataWritePtr = workspace;
         Workspace = 0;
         Available = 0;
     }
 
-    /// Write the next word
-    SOLINAS64_FORCE_INLINE void Write(uint64_t word)
+    /// Fits a word from file/packet data into a Fp element and emits an extra
+    /// bit if needed.  This should be called from the first word of data until
+    /// the last word of data.
+    SOLINAS64_FORCE_INLINE uint64_t ReadNext8Bytes(const uint8_t* data)
     {
-        unsigned available = Available;
-        uint64_t workspace = Workspace;
+        // Read the word of data
+        const uint64_t* wordPtr = reinterpret_cast<const uint64_t*>(data);
+        uint64_t word = *wordPtr;
 
-        // Include any bits that fit
-        workspace |= word << available;
-        available += 61;
-
-        // If there is a full word now:
-        if (available >= 64)
+        // If word needs a bit emitted:
+        if (IsU64Ambiguous(word))
         {
-            // Write the word
-            WriteU64_LE(DataWritePtr, workspace);
+            // Emit words that have the high bit cleared so they are all in Fp:
+
+            // If we ran out of space:
+            if (Available >= 63)
+            {
+                WriteU64_LE(DataWritePtr, Workspace);
+
+                DataWritePtr += 8;
+                Workspace = word >> 63;
+                Available = 1;
+            }
+            else
+            {
+                Workspace |= (word >> 63) << Available;
+                ++Available;
+            }
+
+            // Clear high bit either way
+            word &= kHighBitMask;
+        }
+
+        return word;
+    }
+
+    /// Read the final few bytes of data.
+    /// Precondition: Bytes > 0.
+    SOLINAS64_FORCE_INLINE uint64_t ReadFinalBytes(const uint8_t* data, unsigned bytes)
+    {
+        // No need for reduction because at least high 8 bits are 0.
+        return ReadBytes_LE(data, bytes);
+    }
+
+    /// Flush any remaining bits.
+    /// Returns the number of words starting at Data, up to DataWritePtr.
+    /// The application can either loop based on the return value or choose
+    /// to loop until Data exceeds DataWritePtr.
+    /// Each word can be read via ReadU64_LE().
+    SOLINAS64_FORCE_INLINE unsigned FlushAndGetWordCount()
+    {
+        // If there are some available bytes:
+        if (Available != 0)
+        {
+            // Write final workspace
+            WriteU64_LE(DataWritePtr, Workspace);
             DataWritePtr += 8;
-            available -= 64;
-
-            // Keep remaining bits
-            workspace = word >> (61 - available);
         }
 
-        Workspace = workspace;
-        Available = available;
-    }
-
-    /// Flush the output, writing fractions of a word if needed.
-    /// This must be called or the output may be truncated.
-    /// Returns the number of bytes written overall.
-    SOLINAS64_FORCE_INLINE unsigned Flush()
-    {
-        const unsigned finalBytes = (Available + 7) / 8;
-
-        // Write the number of available bytes
-        WriteBytes_LE(DataWritePtr, finalBytes, Workspace);
-
-        // Calculate number of bytes written overall
-        const uintptr_t writtenBytes = static_cast<uintptr_t>(DataWritePtr - Data) + finalBytes;
-
-        return static_cast<unsigned>(writtenBytes);
-    }
-};
-
-/**
-    ByteWriter
-
-    Writes a series of 61-bit finalized Fp field elements to a byte array,
-    reversing the encoding of ByteReader.  This is different from WordWriter
-    because it can also write 61-bit values that are all ones (outside of Fp).
-
-    See the comments on Fitting Bytes Into Words for how this works.
-
-    Call MaxBytesNeeded() to calculate the maximum number of bytes needed
-    to store the given number of Fp words.
-
-    Call BeginWrite() to start writing.
-    Call Write() to write the next word.
-
-    Call Flush() to write the last few bytes.
-    Flush() returns the number of overall written bytes.
-*/
-struct ByteWriter
-{
-    WordWriter Writer;
-    bool Packed;
-
-    /// Calculate the maximum number of bytes that will be written for the
-    /// given number of Fp words.  May be up to 1.6% larger than necessary.
-    static SOLINAS64_FORCE_INLINE unsigned MaxBytesNeeded(unsigned words)
-    {
-        return WordWriter::BytesNeeded(words);
-    }
-
-    /// Begin writing to the given memory location.
-    /// It is up to the application to provide enough space in the buffer by
-    /// using MaxBytesNeeded() to calculate the buffer size.
-    SOLINAS64_FORCE_INLINE void BeginWrite(uint8_t* data)
-    {
-        Writer.BeginWrite(data);
-        Packed = false;
-    }
-
-    /// Write the next word
-    SOLINAS64_FORCE_INLINE void Write(uint64_t word)
-    {
-        const unsigned word_bits = (word == kAmbiguityMask) ? 60 : 61;
-
-        unsigned available = Writer.Available;
-        uint64_t workspace = Writer.Workspace;
-
-        // Include any bits that fit
-        workspace |= word << available;
-        available += word_bits;
-
-        // If there is a full word now:
-        if (available >= 64)
-        {
-            // Write the word
-            WriteU64_LE(Writer.DataWritePtr, workspace);
-            Writer.DataWritePtr += 8;
-            available -= 64;
-
-            // Keep remaining bits
-            workspace = word >> (word_bits - available);
-        }
-
-        Writer.Workspace = workspace;
-        Writer.Available = available;
-    }
-
-    /// Flush the output, writing fractions of a word if needed.
-    /// This must be called or the output may be truncated.
-    /// Returns the number of bytes written overall.
-    SOLINAS64_FORCE_INLINE unsigned Flush()
-    {
-        return Writer.Flush();
+        // Calculate number of words written overall
+        const uintptr_t writtenWords = static_cast<uintptr_t>(DataWritePtr - Data) / 8;
+        return static_cast<unsigned>(writtenWords);
     }
 };
 
@@ -711,6 +573,35 @@ SOLINAS64_FORCE_INLINE uint64_t HashToNonzeroFp(uint64_t word)
 
     return word;
 }
+
+
+//------------------------------------------------------------------------------
+// Bulk Operations
+
+/// output[] = data[] * coeff
+/// Preconditions: 0 <= coeff < p.
+/// Preconditions: data != null, output != null, workspace != null, bytes > 0
+/// This expands the input data up to solinas64::GetMaxOutputBytes() bytes.
+/// Returns the number of bytes written.
+unsigned MultiplyRegion(
+    const uint8_t* data,    ///< Input data
+    unsigned bytes,         ///< Number of input data bytes
+    uint64_t coeff,         ///< Coefficient to multiply the data by
+    uint8_t* workspace,     ///< Size calculated by solinas64::GetWorkspaceBytes()
+    uint8_t* output);       ///< Size calculated by solinas64::GetMaxOutputBytes()
+
+/// output[] += data[] * coeff
+/// Preconditions: 0 <= coeff < p.
+/// Preconditions: data != null, output != null, workspace != null, bytes > 0
+/// Preconditions: Output has been padded with zeros in the high bytes.
+/// This expands the input data up to solinas64::GetMaxOutputBytes() bytes.
+/// Returns the number of bytes written.
+unsigned MultiplyAddRegion(
+    const uint8_t* data,    ///< Input data
+    unsigned bytes,         ///< Number of input data bytes
+    uint64_t coeff,         ///< Coefficient to multiply the data by
+    uint8_t* workspace,     ///< Size calculated by solinas64::GetWorkspaceBytes()
+    uint8_t* output);       ///< Size calculated by solinas64::GetMaxOutputBytes()
 
 
 } // namespace solinas64
