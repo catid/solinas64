@@ -144,6 +144,9 @@ TODO:
 
 #### Credits
 
+Modular reduction is performed as in "Generalized Mersenne Numbers" J. Solinas (NSA).
+Prime selected from "Solinas primes of small weight for fixed sizes" J. Angel.
+
 Software by Christopher A. Taylor <mrcatid@gmail.com>.
 
 Please reach out if you need support or would like to collaborate on a project.
