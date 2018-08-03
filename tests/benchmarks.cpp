@@ -191,7 +191,7 @@ void EncodeGF256(
 
     for (unsigned i = 1; i < N; ++i)
     {
-        coeff = (uint8_t)solinas64::HashToNonzeroFp(seedMix + 0);
+        coeff = (uint8_t)solinas64::HashToNonzeroFp(seedMix + i);
         if (coeff == 0) {
             coeff = 1;
         }

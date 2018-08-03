@@ -234,11 +234,17 @@ SOLINAS64_FORCE_INLINE uint64_t Multiply(uint64_t x, uint64_t y)
 
     uint64_t t = (static_cast<uint64_t>(a2) << 32) - a2;
 
+#if 1
+    // This version is 33% faster
     // TODO: This seems to work in a stress test, but I need to actually prove it does not need more reductions.
     if (adc(p_lo, t)) {
         adc(p_lo, kPrimeSubC);
     }
     sbb(p_lo, a3);
+#else
+    p_lo = Add(p_lo, t);
+    p_lo = Subtract(p_lo, a3);
+#endif
     return p_lo;
 }
 
@@ -521,14 +527,12 @@ SOLINAS64_FORCE_INLINE uint64_t HashToNonzeroFp(uint64_t word)
     word += 0x9e3779b97f4a7c15;
     word = (word ^ (word >> 30)) * 0xbf58476d1ce4e5b9;
 
-    // Take the top 61 bits
-    word >>= 3;
-
-    // Eliminate values = p
-    word -= (word + 1) >> 61;
-
-    // Eliminate values = 0
-    word += (word - 1) >> 63;
+    if (word >= kPrime) {
+        word >>= 1; // Clear high bit
+    }
+    if (word == 0) {
+        word = 1;
+    }
 
     return word;
 }
