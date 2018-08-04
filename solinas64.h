@@ -155,8 +155,8 @@ namespace solinas64 {
 // Constants
 
 // p = 2^64 - 2^32 + 1
-static const int64_t kPrimeSubC = ((uint64_t)1 << 32) - 1;
-static const uint64_t kPrime = 0 - kPrimeSubC;
+static const uint32_t kPrimeSubC = ~(uint32_t)0;
+static const uint64_t kPrime = 0xffffffff00000001ULL;
 
 
 //------------------------------------------------------------------------------
@@ -185,9 +185,7 @@ SOLINAS64_FORCE_INLINE bool sbb(uint64_t& x, uint64_t y)
 SOLINAS64_FORCE_INLINE uint64_t Add(uint64_t x, uint64_t y)
 {
     if (adc(x, y)) {
-        if (adc(x, kPrimeSubC)) {
-            adc(x, kPrimeSubC);
-        }
+        adc(x, kPrimeSubC);
     }
     return x;
 }
@@ -200,9 +198,7 @@ SOLINAS64_FORCE_INLINE uint64_t Add(uint64_t x, uint64_t y)
 SOLINAS64_FORCE_INLINE uint64_t Subtract(uint64_t x, uint64_t y)
 {
     if (sbb(x, y)) {
-        if (sbb(x, kPrimeSubC)) {
-            sbb(x, kPrimeSubC);
-        }
+        sbb(x, kPrimeSubC);
     }
     return x;
 }
@@ -234,18 +230,7 @@ SOLINAS64_FORCE_INLINE uint64_t Multiply(uint64_t x, uint64_t y)
 
     uint64_t t = (static_cast<uint64_t>(a2) << 32) - a2;
 
-#if 1
-    // This version is 33% faster
-    // TODO: This seems to work in a stress test, but I need to actually prove it does not need more reductions.
-    if (adc(p_lo, t)) {
-        adc(p_lo, kPrimeSubC);
-    }
-    sbb(p_lo, a3);
-#else
-    p_lo = Add(p_lo, t);
-    p_lo = Subtract(p_lo, a3);
-#endif
-    return p_lo;
+    return Subtract(Add(p_lo, t), a3);
 }
 
 /**
