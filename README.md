@@ -7,7 +7,7 @@ The Solinas64 software takes advantage of the commonly available fast
 64x64->128 multiplier to accelerate finite (base) field arithmetic.
 So it runs a lot faster when built into a 64-bit executable.
 
-I wrote this as a challenge to see if I could find a prime field that could run as fast as a Galois field.  This means I only needed to go far enough to implement a toy erasure code encoder.  I also considered a few other fields, which are all slower (see: https://github.com/catid/fp61 ).
+I wrote this as a challenge to see if I could find a prime field that could run as fast as GF(2^8).  This means I only needed to go far enough to implement a toy erasure code encoder.  I also considered a few other fields, which are all slower (see: https://github.com/catid/fp61 ).
 
 As an erasure code, Solinas64 will expand the input data by a number of bytes (as shown during benchmarking).
 
